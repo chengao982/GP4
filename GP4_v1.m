@@ -85,7 +85,6 @@ for iter = 1:iterations
                     mu_con = mu_1+sigma_12*inv(sigma_22)*(sample-mu_2);
                     x_temp = intlinprog(mu_con,intcon,[],[],A_temp,b_temp,lb,ub,opts);
                     
-
                     v_hat = v_hat+x_temp'*mu_con;
                 end
 
