@@ -64,7 +64,7 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
         real_cost.append(cost)
         total_cost += cost
         print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
-        print('--------------------------------------------------------------')
+        print('-----------------------------------------------------------------------------------')
 
         r_k = selected_node
 
@@ -84,7 +84,7 @@ def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = GP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
         print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        print('********************************************************************')
+        print('************************************************************************************************')
         results.append(total_cost)
 
     average_result = np.sum(results)/iterations
@@ -99,7 +99,7 @@ A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
 mu = func.generate_mu(n_link)
 sigma = func.generate_sigma(n_link)
 
-N = 1000
+N = 100
 iterations = 100
 
 GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations)

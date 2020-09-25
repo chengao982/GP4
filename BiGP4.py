@@ -41,9 +41,10 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
                 mu2_sub, sigma2_sub, sigma2_con = func.update_param(mu2_k,sigma2_k,link)
 
                 for i in range(0,N):
-                    sample1 = np.random.normal(mu1_sub[2], math.sqrt(sigma1_sub[22]))
-                    sample2 = np.random.normal(mu2_sub[2], math.sqrt(sigma2_sub[22]))
-                    sample = func.calc_bi_gauss(phi,sample1,sample2)
+                    if np.random.rand() < phi:
+                        sample = np.random.normal(mu1_sub[2], math.sqrt(sigma1_sub[22]))
+                    else:
+                        sample = np.random.normal(mu2_sub[2], math.sqrt(sigma2_sub[22]))
                     mu1_con = func.update_mu(mu1_sub,sigma1_sub,sample)
                     mu2_con = func.update_mu(mu2_sub,sigma2_sub,sample)
                     mu_con = func.calc_bi_gauss(phi,mu1_con,mu2_con)
@@ -70,13 +71,14 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
         selected_links.append(A_idx_k[selected_link])
         print('Selected link is {}, whose value is {}'.format(selected_links[-1],value_min))
 
-        cost1 = np.random.normal(mu1_k[selected_link], math.sqrt(sigma1_k[selected_link,selected_link])).item()
-        cost2 = np.random.normal(mu2_k[selected_link], math.sqrt(sigma2_k[selected_link,selected_link])).item()
-        cost = func.calc_bi_gauss(phi,cost1,cost2)
+        if np.random.rand() < phi:
+            cost = np.random.normal(mu1_k[selected_link], math.sqrt(sigma1_k[selected_link,selected_link])).item()
+        else:
+            cost = np.random.normal(mu2_k[selected_link], math.sqrt(sigma2_k[selected_link,selected_link])).item()
         real_cost.append(cost)
         total_cost += cost
         print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
-        print('--------------------------------------------------------------')
+        print('-----------------------------------------------------------------------------------')
 
         r_k = selected_node
 
@@ -98,7 +100,7 @@ def BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, it
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N)
         print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        print('********************************************************************')
+        print('************************************************************************************************')
         results.append(total_cost)
 
     average_result = np.sum(results)/iterations
@@ -108,7 +110,7 @@ def BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, it
 
 
 A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
-phi = np.random.rand()
+phi = 0.3
 mu1 = func.generate_mu(n_link,10.5)
 sigma1 = func.generate_sigma(n_link)
 mu2 = func.generate_mu(n_link,9.5)
