@@ -22,10 +22,10 @@ mu = [10,10,10,10,10,30]';
 %         -1,2,0,0;
 %         1,0,1,0;
 %         0,0,0,1];
-N = 100;
+N = 1000;
 r_0 = find(b==1);
 r_s = find(b==-1);
-iterations = 10;
+iterations = 100;
 result = 0;
 
 for iter = 1:iterations

@@ -4,12 +4,14 @@ import math
 import func
 import time
 
-def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
+def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
     A_k = A
     A_idx_k = A_idx
     b_k = b
-    mu_k = mu
-    sigma_k = sigma
+    mu1_k = mu1
+    sigma1_k = sigma1
+    mu2_k = mu2
+    sigma2_k = sigma2
     r_k = r_0
 
     total_cost = 0
@@ -25,7 +27,7 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
             next_node = np.where(A_k[:,link]==-1)[0].item()
 
             if next_node == r_s:
-                value = mu_k[link].item()
+                value = func.calc_bi_gauss(phi,mu1_k[link],mu2_k[link]).item()
                 if value < value_min:
                     value_min = value
                     selected_link = link
@@ -35,16 +37,21 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
                 v_hat = 0.0
 
                 A_temp, b_temp = func.update_map(A_k,b_k,link,r_k,next_node)
-                mu_sub, sigma_sub, sigma_con = func.update_param(mu_k,sigma_k,link)
+                mu1_sub, sigma1_sub, sigma1_con = func.update_param(mu1_k,sigma1_k,link)
+                mu2_sub, sigma2_sub, sigma2_con = func.update_param(mu2_k,sigma2_k,link)
 
                 for i in range(0,N):
-                    sample = np.random.normal(mu_sub[2], math.sqrt(sigma_sub[22]))
-                    mu_con = func.update_mu(mu_sub,sigma_sub,sample)
+                    sample1 = np.random.normal(mu1_sub[2], math.sqrt(sigma1_sub[22]))
+                    sample2 = np.random.normal(mu2_sub[2], math.sqrt(sigma2_sub[22]))
+                    sample = func.calc_bi_gauss(phi,sample1,sample2)
+                    mu1_con = func.update_mu(mu1_sub,sigma1_sub,sample)
+                    mu2_con = func.update_mu(mu2_sub,sigma2_sub,sample)
+                    mu_con = func.calc_bi_gauss(phi,mu1_con,mu2_con)
                     x_temp = func.cvxopt_glpk_minmax(mu_con,A_temp,b_temp)
 
                     v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
 
-                value = mu_sub[2]+v_hat/N
+                value = func.calc_bi_gauss(phi,mu1_sub[2],mu2_sub[2])+v_hat/N
 
                 if value < value_min:
                     value_min = value
@@ -53,14 +60,19 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
 
                     A_save = A_temp
                     b_save = b_temp
-                    mu_sub_save = mu_sub
-                    sigma_sub_save = sigma_sub
-                    sigma_save = sigma_con
+                    mu1_sub_save = mu1_sub
+                    sigma1_sub_save = sigma1_sub
+                    sigma1_save = sigma1_con
+                    mu2_sub_save = mu2_sub
+                    sigma2_sub_save = sigma2_sub
+                    sigma2_save = sigma2_con
 
         selected_links.append(A_idx_k[selected_link])
         print('Selected link is {}, whose value is {}'.format(selected_links[-1],value_min))
 
-        cost = np.random.normal(mu_k[selected_link].item(), math.sqrt(sigma_k[selected_link,selected_link]))
+        cost1 = np.random.normal(mu1_k[selected_link], math.sqrt(sigma1_k[selected_link,selected_link])).item()
+        cost2 = np.random.normal(mu2_k[selected_link], math.sqrt(sigma2_k[selected_link,selected_link])).item()
+        cost = func.calc_bi_gauss(phi,cost1,cost2)
         real_cost.append(cost)
         total_cost += cost
         print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
@@ -72,17 +84,19 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
             A_idx_k = np.delete(A_idx_k,selected_link)
             A_k = A_save
             b_k = b_save
-            sigma_k = sigma_save
-            mu_k = func.update_mu(mu_sub_save, sigma_sub_save, cost)
+            sigma1_k = sigma1_save
+            sigma2_k = sigma2_save
+            mu1_k = func.update_mu(mu1_sub_save, sigma1_sub_save, cost)
+            mu2_k = func.update_mu(mu2_sub_save, sigma2_sub_save, cost)
 
     return selected_links, real_cost, total_cost
 
-def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
+def BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations):
     results = []
 
     for ite in range(0,iterations):
         print('current iteration: %d' % ite)
-        selected_links, real_cost, total_cost = GP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
+        selected_links, real_cost, total_cost = BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N)
         print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
         print('********************************************************************')
         results.append(total_cost)
@@ -93,16 +107,20 @@ def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
     return average_result
 
 
-start = time.process_time()
-
 A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
-mu = func.generate_mu(n_link)
-sigma = func.generate_sigma(n_link)
+phi = np.random.rand()
+mu1 = func.generate_mu(n_link,10.5)
+sigma1 = func.generate_sigma(n_link)
+mu2 = func.generate_mu(n_link,9.5)
+sigma2 = func.generate_sigma(n_link)
 
-N = 1000
-iterations = 100
+print(phi)
+print(mu1)
+print(sigma1)
+print(mu2)
+print(sigma2)
 
-GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations)
+N = 100
+iterations = 10
 
-end = time.process_time()
-print(end-start)
+BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations)

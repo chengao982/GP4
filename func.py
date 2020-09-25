@@ -1,6 +1,5 @@
 import numpy as np
 import cvxopt
-import random
 from scipy.stats import ortho_group
 
 def generate_A(n):                              # n: # of "loop" structure
@@ -24,35 +23,36 @@ def generate_b(n_node, origin, destination):    # o and d count from 1, while st
     b[0][destination-1] = -1
     return b.T
 
-def generate_mu(n_link, scaler):
-    mu = scaler*np.ones((1,n_link))
-    mu[0][random.randint(1,n_link-2)] += 0.1
-    mu[0][-1] = (n_link/2)*scaler
+def generate_mu(n_link, mu_scaler=10):
+    mu = mu_scaler*np.ones((1,n_link))
+    # mu[0][np.random.randint(1,n_link-1)] += 0.1
+    mu[0][-1] = (n_link/2)*mu_scaler
 
     # mu = np.random.rand(1,n_link)
     # mu[0][-1] = n_link/4.5
     return mu.T
 
-def generate_sigma(n_link, scaler):
-    D = scaler*np.diag(np.random.rand(n_link))
+def generate_sigma(n_link, sigma_scaler=1):
+    D = sigma_scaler*np.diag(np.random.rand(n_link))
     U = ortho_group.rvs(dim=n_link)
     sigma = np.matmul(np.matmul(U.T,D),U)
     return sigma
 
-def generate_param(n, mu_scaler=10, sigma_scaler=1, origin=1, destination=None):
+def generate_map(n, origin=1, destination=None):
     if destination == None:
         destination = n+2
     n_node = n+2
     n_link = 2*n+2
     A, A_idx = generate_A(n)
     b = generate_b(n_node,origin,destination)
-    mu = generate_mu(n_link,mu_scaler)
-    sigma = generate_sigma(n_link,sigma_scaler)
     r_0 = origin-1
     r_s = destination-1
-    return A, A_idx, b, mu, sigma, r_0, r_s
+    return A, A_idx, b, r_0, r_s, n_link
 
-# A, A_idx, b, mu, sigma, r_0, r_s = generate_param(2)
+
+# A, A_idx, b, r_0, r_s = generate_map(2)
+# mu = generate_mu(3,2)
+# sigma = generate_sigma(3)
 # print(A)
 # print(A_idx)
 # print(b)
@@ -103,6 +103,18 @@ def update_param(mu, sigma, link):
 def update_mu(mu_sub, sigma_sub, sample):
     return mu_sub[1]+(sample-mu_sub[2])/sigma_sub[22]*sigma_sub[12]
 
+def calc_exp_gauss(mu, sigma):
+    sigma_diag = np.diag(sigma).reshape((-1,1)) if type(sigma) is np.ndarray else sigma
+    exp_mu = np.exp(mu+sigma_diag/2)
+    return exp_mu
+
+def calc_bi_gauss(phi, mu1, mu2):
+    return phi*mu1+(1-phi)*mu2
+
+# print(mu[1])
+# print(type(sigma))
+# ex = calc_exp_mu(mu, sigma)
+# print(ex)
 # A_temp, b_temp = update_map(A,b,3,0,3)
 # mu_sub, sigma_sub, sigma_con = update_param(mu,sigma,3)
 
