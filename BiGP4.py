@@ -99,7 +99,7 @@ def BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, it
     for ite in range(0,iterations):
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N)
-        print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
+        print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
         print('************************************************************************************************')
         results.append(total_cost)
 
@@ -116,13 +116,20 @@ sigma1 = func.generate_sigma(n_link)
 mu2 = func.generate_mu(n_link,9.5)
 sigma2 = func.generate_sigma(n_link)
 
-print(phi)
-print(mu1)
-print(sigma1)
-print(mu2)
-print(sigma2)
+# print(phi)
+# print(mu1)
+# print(sigma1)
+# print(mu2)
+# print(sigma2)
 
 N = 100
-iterations = 10
+iterations = 100
 
 BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations)
+
+mu_bi = func.calc_bi_gauss(phi,mu1,mu2)
+sol = func.cvxopt_glpk_minmax(mu_bi,A,b)
+aprior_selected_links = np.where(sol == 1)[0]+1
+aprior_cost = np.dot(sol.T,mu_bi).item()
+print('A prior selected links are {}'.format(aprior_selected_links))
+print('Cost of a prior optimal path is {} '.format(aprior_cost))

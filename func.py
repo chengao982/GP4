@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 import cvxopt
+import os
 from scipy.stats import ortho_group
 
 def generate_A(n):                              # n: # of "loop" structure
@@ -18,10 +20,15 @@ def generate_A(n):                              # n: # of "loop" structure
     return A, A_idx
 
 def generate_b(n_node, origin, destination):    # o and d count from 1, while store from 0
-    b = np.zeros((1,n_node))
-    b[0][origin-1] = 1
-    b[0][destination-1] = -1
-    return b.T
+    b = np.zeros(n_node)
+
+    r_0 = origin-1
+    r_s = destination-1
+
+    b[r_0] = 1
+    b[r_s] = -1
+
+    return b.reshape(-1,1), r_0, r_s
 
 def generate_mu(n_link, mu_scaler=10):
     mu = mu_scaler*np.ones((1,n_link))
@@ -44,15 +51,13 @@ def generate_map(n, origin=1, destination=None):
     n_node = n+2
     n_link = 2*n+2
     A, A_idx = generate_A(n)
-    b = generate_b(n_node,origin,destination)
-    r_0 = origin-1
-    r_s = destination-1
+    b, r_0, r_s = generate_b(n_node,origin,destination)
     return A, A_idx, b, r_0, r_s, n_link
 
 
 # A, A_idx, b, r_0, r_s = generate_map(2)
-# mu = generate_mu(3,2)
-# sigma = generate_sigma(3)
+# mu = generate_mu(6)
+# sigma = generate_sigma(6)
 # print(A)
 # print(A_idx)
 # print(b)
@@ -65,18 +70,21 @@ def cvxopt_glpk_minmax(c, A, b, x_min=0):
     dim = np.size(c,0)
 
     x_min = x_min * np.ones(dim)
-    # x_max = x_max * ones(n)
-    # G = np.vstack([+np.eye(dim),-np.eye(dim)])
-    # h = np.hstack([x_max, -x_min])
-    G = -np.eye(dim)
+    x_max = x_max * ones(n)
+    G = np.vstack([+np.eye(dim),-np.eye(dim)])
+    h = np.hstack([x_max, -x_min])
+    # G = -np.eye(dim)
+    # h = x_min.T
 
     c = cvxopt.matrix(c,tc='d')
     A = cvxopt.matrix(A,tc='d')
     b = cvxopt.matrix(b,tc='d')
     G = cvxopt.matrix(G,tc='d')
-    h = cvxopt.matrix(x_min.T,tc='d')
-    sol = cvxopt.solvers.lp(c, G, h, A, b, solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-    return np.array(sol['x'])
+    h = cvxopt.matrix(h,tc='d')
+    # sol = cvxopt.solvers.lp(c, G, h, A, b, solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
+    _,x = cvxopt.glpk.ilp(c,G,h,A,b)
+
+    return np.array(x)
 
 def update_map(A, b, link, curr_node, next_node):
     A_temp = np.delete(A,link,axis=1)
@@ -133,3 +141,65 @@ def calc_bi_gauss(phi, mu1, mu2):
 #        [ 0.04308853, -0.09300809, -0.03136713,  0.55790984,  0.0241525 , -0.09513229],
 #        [-0.02114256,  0.22951716,  0.15563712,  0.0241525 ,  0.37843407,  0.2149459 ],
 #        [-0.09272821,  0.04012107, -0.0023954 , -0.09513229,  0.2149459 ,  0.57376631]])
+
+def extract_map(map_id):
+    os.chdir('/Users/steve/Documents/CMC/TransportationNetworks-master/TransportationNetworks-master/')
+    table_paths = ['SiouxFalls/SiouxFalls_network.xlsx', 
+                'Anaheim/Anaheim_network.xlsx', 
+                'Barcelona/Barcelona_network.xlsx', 
+                'Chicago-Sketch/Chicago_Sketch_network.xlsx']
+
+    raw_map_data = pd.read_excel(table_paths[map_id])
+
+    origins = raw_map_data['From']
+    destinations = raw_map_data['To']
+    n_node = max(origins.max(), destinations.max())
+    n_link = raw_map_data.shape[0]
+    
+    A = np.zeros((n_node,n_link))
+    for i in range(n_link):
+        A[origins[i]-1,i] = 1
+        A[destinations[i]-1,i] = -1
+        
+    A_idx = np.arange(1,n_link+1)
+    
+    mu = np.array(raw_map_data['Cost']).reshape(-1,1)
+        
+    return A, A_idx, mu
+
+def generate_cov(mu, nu):
+    n_link = np.size(mu)
+    
+    sigma = nu*mu*np.random.rand(n_link,1)
+    
+    n_sample = n_link
+    samples = np.zeros((n_link,n_sample))
+    
+    for i in range(np.shape(samples)[0]):
+        for j in range (np.shape(samples)[1]):
+            while samples[i][j] <= 0:
+                samples[i][j] = np.random.normal(mu[i],sigma[i])
+    
+    cov = np.cov(samples)
+    
+    return cov
+
+def get_let_path(mu,A,b):
+    sol = cvxopt_glpk_minmax(mu,A,b)
+    selected_links = list(np.where(sol == 1)[0])
+
+    num_sel_links = len(selected_links)
+    sorted_links = []
+    node = np.where(b==1)[0].item()
+    while num_sel_links != len(sorted_links):
+        for link in selected_links:
+            if A[node,link] == 1:
+                sorted_links.append(link)
+                node = np.where(A[:,link]==-1)[0].item()
+                selected_links.remove(link)
+                break
+    sorted_links = [link+1 for link in sorted_links]
+
+    cost = np.dot(sol.T,mu).item()
+
+    return sorted_links, cost

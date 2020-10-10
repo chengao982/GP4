@@ -42,7 +42,11 @@ def logGP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
                     mu_exp = func.calc_exp_gauss(mu_con,sigma_con)
                     x_temp = func.cvxopt_glpk_minmax(mu_exp,A_temp,b_temp)
 
-                    v_hat = v_hat+np.dot(x_temp.T,mu_exp).item()
+                    if x_temp.all() == None:
+                        v_hat = float("inf")
+                        break
+                    else:
+                        v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
 
                 value = mu_sub[2]+v_hat/N
 
@@ -83,7 +87,7 @@ def logGP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
     for ite in range(0,iterations):
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = logGP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
-        print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
+        print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
         print('************************************************************************************************')
         results.append(total_cost)
 
@@ -96,10 +100,17 @@ def logGP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
 A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
 mu = func.generate_mu(n_link,1)
 sigma = func.generate_sigma(n_link,0.5)
-print(mu)
-print(sigma)
+# print(mu)
+# print(sigma)
 
 N = 100
 iterations = 10
 
 logGP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations)
+
+mu_exp = func.calc_exp_gauss(mu,sigma)
+sol = func.cvxopt_glpk_minmax(mu_exp,A,b)
+aprior_selected_links = np.where(sol == 1)[0]+1
+aprior_cost = np.dot(sol.T,mu_exp).item()
+print('A prior selected links are {}'.format(aprior_selected_links))
+print('Cost of a prior optimal path is {} '.format(aprior_cost))

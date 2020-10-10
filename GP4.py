@@ -42,7 +42,11 @@ def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
                     mu_con = func.update_mu(mu_sub,sigma_sub,sample)
                     x_temp = func.cvxopt_glpk_minmax(mu_con,A_temp,b_temp)
 
-                    v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
+                    if x_temp.all() == None:
+                        v_hat = float("inf")
+                        break
+                    else:
+                        v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
 
                 value = mu_sub[2]+v_hat/N
 
@@ -83,7 +87,7 @@ def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
     for ite in range(0,iterations):
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = GP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
-        print('iteration finished, total cost is {}\nselected_links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
+        print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
         print('************************************************************************************************')
         results.append(total_cost)
 
@@ -95,14 +99,23 @@ def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
 
 start = time.process_time()
 
-A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
-mu = func.generate_mu(n_link)
-sigma = func.generate_sigma(n_link)
+# A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
+# mu = func.generate_mu(n_link)
+# sigma = func.generate_sigma(n_link,3)
+
+A, A_idx, mu = func.extract_map(1)
+cov = func.generate_cov(mu, 0.5)
+b, r_0, r_s = func.generate_b(np.shape(A)[0], 1, 15)
 
 N = 100
-iterations = 100
+iterations = 10
 
-GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations)
+aprior_selected_links, aprior_cost = func.get_let_path(mu, A, b)
+print('A prior selected links are {}'.format(aprior_selected_links))
+print('Cost of a prior optimal path is {}'.format(aprior_cost))
+
+GP4_iterations(A, A_idx, b, mu, cov, r_0, r_s, N, iterations)
+
 
 end = time.process_time()
 print(end-start)
