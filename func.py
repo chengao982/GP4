@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import cvxopt
+from cvxopt import glpk
 import os
 from scipy.stats import ortho_group
 
@@ -31,13 +32,13 @@ def generate_b(n_node, origin, destination):    # o and d count from 1, while st
     return b.reshape(-1,1), r_0, r_s
 
 def generate_mu(n_link, mu_scaler=10):
-    mu = mu_scaler*np.ones((1,n_link))
+    mu = mu_scaler*np.ones(n_link)
     # mu[0][np.random.randint(1,n_link-1)] += 0.1
-    mu[0][-1] = (n_link/2)*mu_scaler
+    mu[-1] = (n_link/2)*mu_scaler
 
     # mu = np.random.rand(1,n_link)
-    # mu[0][-1] = n_link/4.5
-    return mu.T
+    # mu[-1] = n_link/4.5
+    return mu.reshape(-1,1)
 
 def generate_sigma(n_link, sigma_scaler=1):
     D = sigma_scaler*np.diag(np.random.rand(n_link))
@@ -66,11 +67,11 @@ def generate_map(n, origin=1, destination=None):
 # print(r_0)
 # print(r_s)
 
-def cvxopt_glpk_minmax(c, A, b, x_min=0):
+def cvxopt_glpk_minmax(c, A, b, x_min=0, x_max=1):
     dim = np.size(c,0)
 
     x_min = x_min * np.ones(dim)
-    x_max = x_max * ones(n)
+    x_max = x_max * np.ones(dim)
     G = np.vstack([+np.eye(dim),-np.eye(dim)])
     h = np.hstack([x_max, -x_min])
     # G = -np.eye(dim)
@@ -82,7 +83,7 @@ def cvxopt_glpk_minmax(c, A, b, x_min=0):
     G = cvxopt.matrix(G,tc='d')
     h = cvxopt.matrix(h,tc='d')
     # sol = cvxopt.solvers.lp(c, G, h, A, b, solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-    _,x = cvxopt.glpk.ilp(c,G,h,A,b)
+    _,x = glpk.ilp(c,G,h,A,b,options={'msg_lev':'GLP_MSG_OFF'})
 
     return np.array(x)
 
@@ -99,8 +100,8 @@ def update_param(mu, sigma, link):
     mu_sub = {1:mu_1, 2:mu_2}
 
     sigma_11 = np.delete(np.delete(sigma,link,axis=1),link,axis=0)
-    sigma_12 = np.delete(sigma[:,link],link,axis=0).reshape((-1,1))
-    sigma_21 = np.delete(sigma[link,:],link).reshape((1,-1))
+    sigma_12 = np.delete(sigma[:,link],link,axis=0).reshape(-1,1)
+    sigma_21 = np.delete(sigma[link,:],link).reshape(1,-1)
     sigma_22 = sigma[link,link]
     sigma_sub = {11:sigma_11, 12:sigma_12, 21:sigma_21, 22:sigma_22}
 
@@ -112,7 +113,7 @@ def update_mu(mu_sub, sigma_sub, sample):
     return mu_sub[1]+(sample-mu_sub[2])/sigma_sub[22]*sigma_sub[12]
 
 def calc_exp_gauss(mu, sigma):
-    sigma_diag = np.diag(sigma).reshape((-1,1)) if type(sigma) is np.ndarray else sigma
+    sigma_diag = np.diag(sigma).reshape(-1,1) if type(sigma) is np.ndarray else sigma
     exp_mu = np.exp(mu+sigma_diag/2)
     return exp_mu
 
@@ -135,15 +136,9 @@ def calc_bi_gauss(phi, mu1, mu2):
 # x = cvxopt_glpk_minmax(mu, A, b)
 # print(x)
 
-# array([[ 0.58783847, -0.08191563, -0.07014496,  0.04308853, -0.02114256, -0.09272821],
-#        [-0.08191563,  0.60522864,  0.01545851, -0.09300809,  0.22951716,  0.04012107],
-#        [-0.07014496,  0.01545851,  0.63474145, -0.03136713,  0.15563712, -0.0023954 ],
-#        [ 0.04308853, -0.09300809, -0.03136713,  0.55790984,  0.0241525 , -0.09513229],
-#        [-0.02114256,  0.22951716,  0.15563712,  0.0241525 ,  0.37843407,  0.2149459 ],
-#        [-0.09272821,  0.04012107, -0.0023954 , -0.09513229,  0.2149459 ,  0.57376631]])
 
 def extract_map(map_id):
-    os.chdir('/Users/steve/Documents/CMC/TransportationNetworks-master/TransportationNetworks-master/')
+    os.chdir('/Users/steve/Documents/CMC/TransportationNetworks-master/TransportationNetworks-master/') #change it to your own directory
     table_paths = ['SiouxFalls/SiouxFalls_network.xlsx', 
                 'Anaheim/Anaheim_network.xlsx', 
                 'Barcelona/Barcelona_network.xlsx', 
@@ -177,29 +172,86 @@ def generate_cov(mu, nu):
     
     for i in range(np.shape(samples)[0]):
         for j in range (np.shape(samples)[1]):
-            while samples[i][j] <= 0:
-                samples[i][j] = np.random.normal(mu[i],sigma[i])
+            # while samples[i][j] <= 0:
+            samples[i][j] = np.random.normal(mu[i],sigma[i])
     
     cov = np.cov(samples)
     
     return cov
 
+def generate_cov1(mu, nu, factors):         #factors up, corr down
+    n_link = np.size(mu)
+        
+    W = np.random.randn(n_link,factors)
+    S = np.dot(W,W.T) + np.diag(np.random.rand(1,n_link))
+    corr = np.matmul(np.matmul(np.diag(1/np.sqrt(np.diag(S))),S),np.diag(1/np.sqrt(np.diag(S))))
+    
+    sigma = nu*mu*np.random.rand(n_link,1).reshape(-1,1)
+    
+    sigma = np.matmul(sigma,sigma.T)
+
+    cov = sigma*corr
+    
+    return corr, sigma, cov
+
 def get_let_path(mu,A,b):
+    sol = cvxopt_glpk_minmax(mu,A,b)
+    if sol.all() == None:
+        return None, None
+
+    else:
+        selected_links = list(np.where(sol == 1)[0])
+
+        num_sel_links = len(selected_links)
+        sorted_links = []
+        node = np.where(b==1)[0].item()
+        while num_sel_links != len(sorted_links):
+            for link in selected_links:
+                if A[node,link] == 1:
+                    sorted_links.append(link)
+                    node = np.where(A[:,link]==-1)[0].item()
+                    selected_links.remove(link)
+                    break
+        sorted_links = [link+1 for link in sorted_links]
+
+        cost = np.dot(sol.T,mu).item()
+
+        return sorted_links, cost
+
+def get_let_first_step(mu,A,b):
     sol = cvxopt_glpk_minmax(mu,A,b)
     selected_links = list(np.where(sol == 1)[0])
 
-    num_sel_links = len(selected_links)
-    sorted_links = []
     node = np.where(b==1)[0].item()
-    while num_sel_links != len(sorted_links):
-        for link in selected_links:
-            if A[node,link] == 1:
-                sorted_links.append(link)
-                node = np.where(A[:,link]==-1)[0].item()
-                selected_links.remove(link)
-                break
-    sorted_links = [link+1 for link in sorted_links]
+    for link in selected_links:
+        if A[node,link] == 1:
+            first_step = link
+            break
 
     cost = np.dot(sol.T,mu).item()
 
-    return sorted_links, cost
+    return first_step, cost
+
+def generate_cov_log(mu_ori, nu):
+    n_link = np.size(mu_ori)
+    
+    sigma = nu*mu_ori*np.random.rand(n_link,1)
+
+    sigma_log = np.log(np.divide(sigma**2,mu_ori**2)+1)
+    mu_log = np.log(mu_ori)-0.5*sigma_log
+    
+    n_sample = n_link
+    samples = np.zeros((n_link,n_sample))
+    
+    for i in range(np.shape(samples)[0]):
+        samples[i] = np.random.lognormal(mu_log[i],np.sqrt(sigma_log[i]),(1,np.shape(samples)[1]))
+    
+    cov_ori = np.cov(samples)
+    
+    return cov_ori
+
+def calc_logGP4_param(mu_ori, cov_ori):
+    cov_log = np.log(cov_ori/np.dot(mu_ori,mu_ori.T)+1)
+    mu_log = np.log(mu_ori)-0.5*np.diag(cov_log).reshape(-1,1)
+    
+    return mu_log, cov_log

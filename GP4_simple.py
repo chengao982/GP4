@@ -3,6 +3,8 @@ import func
 import matplotlib.pyplot as plt
 import time
 import plot
+import os
+import pandas as pd
 
 def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
     A_k = A
@@ -88,13 +90,12 @@ def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
         # print('current GP4 iteration: %d' % ite)
         selected_links, real_cost, total_cost = GP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
         # print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        print('iteration finished, total cost is {}\nselected links are {}'.format(total_cost,selected_links))
+        # print('selected links are {}'.format(selected_links))
         # print('************************************************************************************************')
         results.append(total_cost)
 
     average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
+    print('GP4: Average performance over {} iterations is {}'.format(iterations,average_result))
 
     return average_result
 
@@ -137,85 +138,29 @@ def dplus_iterations(A, A_idx, b, mu, sigma, r_0, r_s, iterations):
     for ite in range(iterations):
         # print('current Dijkstra_plus iteration: %d' % ite)
         selected_links, real_cost, total_cost = dplus(A, A_idx, b, mu, sigma, r_0, r_s)
-        # print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        # print('************************************************************************************************')
+        print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
+        print('************************************************************************************************')
         results.append(total_cost)
 
     average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
+    print('D+: Average performance over {} iterations is {}'.format(iterations,average_result))
 
     return average_result
 
-def dijkstra(A, b, mu, sigma):
-    mu_k = mu
-    sigma_k = sigma
-    r_k = r_0
-
-    total_cost = 0
-    real_cost = []
-
-    selected_links, dijkstra_cost = func.get_let_path(mu, A, b)
-    num_sel_links = len(selected_links)
-    links = np.array(selected_links)-1
-
-    for i in range(num_sel_links):
-        mu_sub, sigma_sub, sigma_k = func.update_param(mu_k,sigma_k,links[0])
-        cost = np.random.normal(mu_sub[2], np.sqrt(sigma_sub[22]))
-        real_cost.append(cost)
-        total_cost += cost
-        mu_k = func.update_mu(mu_sub,sigma_sub,cost)
-        for j in range(1,len(links)):
-            if links[j] > links[0]:
-                links[j] -= 1
-        links = np.delete(links,0)
-
-    return selected_links, real_cost, total_cost
-
-def dijkstra_iterations(A, b, mu, sigma, iterations):
-    results = []
-
-    for ite in range(iterations):
-        # print('current Dijkstra iteration: %d' % ite)
-        selected_links, real_cost, total_cost = dijkstra(A, b, mu, sigma)
-        # print('iteration finished, total cost is {}\ncorresponding cost are {}'.format(total_cost,real_cost))
-        # print('************************************************************************************************')
-        results.append(total_cost)
-
-    average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
-
-    return average_result
-
-# start = time.process_time()
-
-# A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
-# mu = func.generate_mu(n_link)
-# sigma = func.generate_sigma(n_link,3)
-
-A, A_idx, mu = func.extract_map(0)
-_, sig, cov1 = func.generate_cov1(mu, 0.5, 50)
-corr, _, _ = func.generate_cov1(mu, 0.5, 10)
-cov2 = sig*corr
-cov3 = sig*np.eye(np.size(mu))
-n_node = np.shape(A)[0]
-# origin = np.random.randint(0,int(0.5*n_node))
-# destination = np.random.randint(int(0.5*n_node),n_node)
-# b, r_0, r_s = func.generate_b(n_node, origin, destination)
 
 N = 100
-iterations = 200
+iterations = 100
 
-n_test = 10
+n_test = 30
 test_results = [[],[],[]]
 OD_pairs = []
 
-for test in range(n_test):
-    origin = np.random.randint(0,int(0.5*n_node)) + 1
-    destination = np.random.randint(int(0.5*n_node),n_node) + 1
-    b, r_0, r_s = func.generate_b(n_node, origin, destination)
-    OD_pairs.append((r_0,r_s))                                  #+1 to get true index of node
+for test in range(1):
+    A, A_idx, b, r_0, r_s, n_link = func.generate_map(10)
+    mu = func.generate_mu(n_link)
+    cov = func.generate_cov(mu, 0.5)
+
+    OD_pairs.append((r_0,r_s))
     print('test # {}, O:{}, D:{}'.format(test,r_0,r_s))
 
     dijkstra_selected_links, dijkstra_cost = func.get_let_path(mu, A, b)
@@ -226,24 +171,15 @@ for test in range(n_test):
         test_results[0].append(dijkstra_cost)
         print('Dijkstra selected links are {}'.format(dijkstra_selected_links))
         print('Cost of Dijkstra optimal path is {}'.format(dijkstra_cost))
-    print('************************************************************************************************')
-
-    dijkstra_cost = dijkstra_iterations(A, b, mu, cov2, iterations)
-    test_results[1].append(dijkstra_cost)
 
     # dplus_cost = dplus_iterations(A, A_idx, b, mu, cov, r_0, r_s, iterations)
     # test_results[1].append(dplus_cost)
 
-    # GP4_cost = GP4_iterations(A, A_idx, b, mu, cov1, r_0, r_s, N, iterations)
-    # test_results[1].append(GP4_cost)
-
-    GP4_cost = GP4_iterations(A, A_idx, b, mu, cov2, r_0, r_s, N, iterations)
+    GP4_cost = GP4_iterations(A, A_idx, b, mu, cov, r_0, r_s, N, 1)
     test_results[2].append(GP4_cost)
 
-# end = time.process_time()
-# print(end-start)
+
+# plot.GP4_plot(test_results,OD_pairs)
 
 print(test_results)
 print(OD_pairs)
-
-# plot.GP4_plot(test_results,OD_pairs)

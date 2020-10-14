@@ -1,6 +1,4 @@
 import numpy as np
-import cvxopt
-import math
 import func
 import time
 
@@ -19,7 +17,7 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
     selected_links = []
 
     while r_k != r_s:
-        print('current node is %d' % r_k)
+        print('current node is %d' % (r_k+1))
         links_to_search = np.where(A_k[r_k,:]==1)
         value_min = float("inf")
 
@@ -42,15 +40,19 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
 
                 for i in range(0,N):
                     if np.random.rand() < phi:
-                        sample = np.random.normal(mu1_sub[2], math.sqrt(sigma1_sub[22]))
+                        sample = np.random.normal(mu1_sub[2], np.sqrt(sigma1_sub[22]))
                     else:
-                        sample = np.random.normal(mu2_sub[2], math.sqrt(sigma2_sub[22]))
+                        sample = np.random.normal(mu2_sub[2], np.sqrt(sigma2_sub[22]))
                     mu1_con = func.update_mu(mu1_sub,sigma1_sub,sample)
                     mu2_con = func.update_mu(mu2_sub,sigma2_sub,sample)
                     mu_con = func.calc_bi_gauss(phi,mu1_con,mu2_con)
                     x_temp = func.cvxopt_glpk_minmax(mu_con,A_temp,b_temp)
 
-                    v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
+                    if x_temp.all() == None:
+                        v_hat = float("inf")
+                        break
+                    else:
+                        v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
 
                 value = func.calc_bi_gauss(phi,mu1_sub[2],mu2_sub[2])+v_hat/N
 
@@ -72,9 +74,9 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
         print('Selected link is {}, whose value is {}'.format(selected_links[-1],value_min))
 
         if np.random.rand() < phi:
-            cost = np.random.normal(mu1_k[selected_link], math.sqrt(sigma1_k[selected_link,selected_link])).item()
+            cost = np.random.normal(mu1_k[selected_link], np.sqrt(sigma1_k[selected_link,selected_link])).item()
         else:
-            cost = np.random.normal(mu2_k[selected_link], math.sqrt(sigma2_k[selected_link,selected_link])).item()
+            cost = np.random.normal(mu2_k[selected_link], np.sqrt(sigma2_k[selected_link,selected_link])).item()
         real_cost.append(cost)
         total_cost += cost
         print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
@@ -96,7 +98,7 @@ def BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N):
 def BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations):
     results = []
 
-    for ite in range(0,iterations):
+    for ite in range(iterations):
         print('current iteration: %d' % ite)
         selected_links, real_cost, total_cost = BiGP4(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N)
         print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
@@ -125,11 +127,8 @@ sigma2 = func.generate_sigma(n_link)
 N = 100
 iterations = 100
 
-BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations)
-
-mu_bi = func.calc_bi_gauss(phi,mu1,mu2)
-sol = func.cvxopt_glpk_minmax(mu_bi,A,b)
-aprior_selected_links = np.where(sol == 1)[0]+1
-aprior_cost = np.dot(sol.T,mu_bi).item()
+aprior_selected_links, aprior_cost = func.get_let_path(mu_bi, A, b)
 print('A prior selected links are {}'.format(aprior_selected_links))
-print('Cost of a prior optimal path is {} '.format(aprior_cost))
+print('Cost of a prior optimal path is {}'.format(aprior_cost))
+
+BiGP4_iterations(A, A_idx, b, phi, mu1, sigma1, mu2, sigma2, r_0, r_s, N, iterations)
