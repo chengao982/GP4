@@ -1,249 +1,153 @@
 import numpy as np
 import func
-import matplotlib.pyplot as plt
 import time
-import plot
+from func import Map
+from benchmark import PLM
+from scipy.stats import norm
 
-def GP4(A, A_idx, b, mu, sigma, r_0, r_s, N):
-    A_k = A
-    A_idx_k = A_idx
-    b_k = b
-    mu_k = mu
-    sigma_k = sigma
-    r_k = r_0
+def GP4(mymap, T, N, S, decom_method='cholesky'):
+    print('current node: {}'.format(mymap.r_0 + 1))
+    value_max = 0
+    map_temp = Map()
 
-    total_cost = 0
-    real_cost = []
-    selected_links = []
+    for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
+        if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
+            continue
 
-    while r_k != r_s:
-        # print('current node is %d' % (r_k+1))
-        links_to_search = np.where(A_k[r_k,:]==1)
-        value_min = float("inf")
+        link = d['index']
+        print('current link: {}'.format(link + 1))
 
-        for link in links_to_search[0]:
-            next_node = np.where(A_k[:,link]==-1)[0].item()
+        if next_node == mymap.r_s:
+            value = norm.cdf(T, mymap.mu[link].item(), np.sqrt(mymap.cov[link, link]))
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-            if next_node == r_s:
-                value = mu_k[link].item()
-                if value < value_min:
-                    value_min = value
-                    selected_link = link
-                    selected_node = next_node
+        else:
+            v_hat = 0
+            G_temp = func.remove_graph_edge(mymap.G, link)
+            mu_sub, cov_sub, cov_con = func.update_param(mymap.mu, mymap.cov, link)
 
-            else:
-                v_hat = 0.0
+            for i in range(N):
+                sample = np.random.normal(mu_sub[2], np.sqrt(cov_sub[22]))
+                T_temp = T - sample
+                if T_temp > 0:
+                    mu_con = func.update_mu(mu_sub, cov_sub, sample)
+                    map_temp.make_map_with_G(mu=mu_con, cov=cov_con, OD_true=[next_node, mymap.r_s], G=G_temp)
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, decom_method=decom_method)[0]
 
-                A_temp, b_temp = func.update_map(A_k,b_k,link,r_k,next_node)
-                mu_sub, sigma_sub, sigma_con = func.update_param(mu_k,sigma_k,link)
+            value = v_hat / N
 
-                for i in range(0,N):
-                    sample = np.random.normal(mu_sub[2], np.sqrt(sigma_sub[22]))
-                    mu_con = func.update_mu(mu_sub,sigma_sub,sample)
-                    x_temp = func.cvxopt_glpk_minmax(mu_con,A_temp,b_temp)
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-                    if x_temp.all() == None:
-                        v_hat = float("inf")
-                        break
-                    else:
-                        v_hat = v_hat+np.dot(x_temp.T,mu_con).item()
+    return selected_link, value_max
 
-                value = mu_sub[2]+v_hat/N
+def logGP4(mymap, T, N, S, decom_method='cholesky'):
+    print('current node: {}'.format(mymap.r_0 + 1))
+    value_max = 0
+    map_temp = Map()
 
-                if value < value_min:
-                    value_min = value
-                    selected_link = link
-                    selected_node = next_node
+    for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
+        if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
+            continue
 
-                    A_save = A_temp
-                    b_save = b_temp
-                    mu_sub_save = mu_sub
-                    sigma_sub_save = sigma_sub
-                    sigma_save = sigma_con
+        link = d['index']
+        print('current link: {}'.format(link + 1))
 
-        selected_links.append(A_idx_k[selected_link])
-        # print('Selected link is {}, whose value is {}'.format(selected_links[-1],value_min))
+        if next_node == mymap.r_s:
+            value = norm.cdf(np.log(T), mymap.mu[link].item(), np.sqrt(mymap.cov[link, link]))
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-        cost = np.random.normal(mu_k[selected_link].item(), np.sqrt(sigma_k[selected_link,selected_link]))
-        real_cost.append(cost)
-        total_cost += cost
-        # print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
-        # print('-----------------------------------------------------------------------------------')
+        else:
+            v_hat = 0
+            G_temp = func.remove_graph_edge(mymap.G, link)
+            mu_sub, cov_sub, cov_con = func.update_param(mymap.mu, mymap.cov, link)
 
-        r_k = selected_node
+            for i in range(N):
+                sample = np.random.normal(mu_sub[2], np.sqrt(cov_sub[22]))
+                T_temp = T - np.exp(sample)
+                if T_temp > 0:
+                    mu_con = func.update_mu(mu_sub, cov_sub, sample)
+                    map_temp.make_map_with_G(mu=mu_con, cov=cov_con, OD_true=[next_node, mymap.r_s], G=G_temp)
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, model="log", decom_method=decom_method)[0]
 
-        if r_k != r_s:
-            A_idx_k = np.delete(A_idx_k,selected_link)
-            A_k = A_save
-            b_k = b_save
-            sigma_k = sigma_save
-            mu_k = func.update_mu(mu_sub_save, sigma_sub_save, cost)
+            value = v_hat / N
 
-    return selected_links, real_cost, total_cost
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-def GP4_iterations(A, A_idx, b, mu, sigma, r_0, r_s, N, iterations):
-    results = []
+    return selected_link, value_max
 
-    for ite in range(iterations):
-        # print('current GP4 iteration: %d' % ite)
-        selected_links, real_cost, total_cost = GP4(A, A_idx, b, mu, sigma, r_0, r_s, N)
-        # print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        print('iteration finished, total cost is {}\nselected links are {}'.format(total_cost,selected_links))
-        # print('************************************************************************************************')
-        results.append(total_cost)
+def biGP4(mymap, T, N, S, decom_method='cholesky'):
+    print('current node: {}'.format(mymap.r_0 + 1))
+    value_max = 0
+    map_temp = Map()
 
-    average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
+    for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
+        if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
+            continue
 
-    return average_result
+        link = d['index']
+        print('current link: {}'.format(link + 1))
 
-def dplus(A, A_idx, b, mu, sigma, r_0, r_s):
-    A_k = A
-    A_idx_k = A_idx
-    b_k = b
-    mu_k = mu
-    sigma_k = sigma
-    r_k = r_0
+        if next_node == mymap.r_s:
+            value1 = norm.cdf(T, mymap.mu[link].item(), np.sqrt(mymap.cov[link, link]))
+            value2 = norm.cdf(T, mymap.mu2[link].item(), np.sqrt(mymap.cov2[link, link]))
+            value = func.calc_bi_gauss(mymap.phi_bi, value1, value2)
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-    total_cost = 0
-    real_cost = []
-    selected_links = []
+        else:
+            v_hat = 0
+            G_temp = func.remove_graph_edge(mymap.G, link)
+            mu1_sub, cov1_sub, cov1_con = func.update_param(mymap.mu, mymap.cov, link)
+            mu2_sub, cov2_sub, cov2_con = func.update_param(mymap.mu2, mymap.cov2, link)
 
-    while r_k != r_s:
-        # print('current node is %d' % (r_k+1))
-        link, value = func.get_let_first_step(mu_k,A_k,b_k)
-        next_node = np.where(A_k[:,link]==-1)[0].item()
-        A_k, b_k = func.update_map(A_k,b_k,link,r_k,next_node)
-        r_k = next_node
-        mu_sub, sigma_sub, sigma_k = func.update_param(mu_k,sigma_k,link)
-        cost = np.random.normal(mu_sub[2], np.sqrt(sigma_sub[22]))
-        mu_k = func.update_mu(mu_sub,sigma_sub,cost)
-        
-        selected_links.append(A_idx_k[link])
-        # print('Selected link is {}, whose value is {}'.format(selected_links[-1],value))
-        A_idx_k = np.delete(A_idx_k,link)
+            for i in range(N):
+                sample = func.generate_biGP_samples(mymap.phi_bi, mu1_sub[2], mu2_sub[2], cov1_sub[22], cov2_sub[22], 1).item()
+                T_temp = T - sample
+                if T_temp > 0:
+                    mu1_con = func.update_mu(mu1_sub, cov1_sub, sample)
+                    mu2_con = func.update_mu(mu2_sub, cov2_sub, sample)
+                    map_temp.make_map_with_G(mu=mu1_con, cov=cov1_con, OD_true=[next_node, mymap.r_s], G=G_temp, mu2=mu2_con, cov2=cov2_con, phi_bi=mymap.phi_bi)
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, model="bi", decom_method=decom_method)[0]
 
-        real_cost.append(cost)
-        total_cost += cost
-        # print('Sampled travel time is {}, running total cost is {}'.format(cost,total_cost))
-        # print('-----------------------------------------------------------------------------------')
+            value = v_hat / N
 
-    return selected_links, real_cost, total_cost
+            if value >= value_max:
+                value_max = value
+                selected_link = link
 
-def dplus_iterations(A, A_idx, b, mu, sigma, r_0, r_s, iterations):
-    results = []
+    return selected_link, value_max
 
-    for ite in range(iterations):
-        # print('current Dijkstra_plus iteration: %d' % ite)
-        selected_links, real_cost, total_cost = dplus(A, A_idx, b, mu, sigma, r_0, r_s)
-        # print('iteration finished, total cost is {}\nselected links are {}\ncorresponding cost are {}'.format(total_cost,selected_links,real_cost))
-        # print('************************************************************************************************')
-        results.append(total_cost)
+def GP4_iterations(mymap, T, N, S, MaxIter, model='G', decom_method='cholesky'):
+    '''
+    run a variant of GP4 for MaxIter times and return the statistics
+    '''
 
-    average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
+    pro = []
+    t_delta = []
 
-    return average_result
+    for ite in range(MaxIter):
+        print('GP4 iteration #{}'.format(ite))
+        t1 = time.perf_counter()
 
-def dijkstra(A, b, mu, sigma):
-    mu_k = mu
-    sigma_k = sigma
-    r_k = r_0
+        if model == 'G':
+            selected_link, prob = GP4(mymap, T, N, S, decom_method)
+        elif model == 'log':
+            selected_link, prob = logGP4(mymap, T, N, S, decom_method)
+        elif model == 'bi':
+            selected_link, prob = biGP4(mymap, T, N, S, decom_method)
 
-    total_cost = 0
-    real_cost = []
+        t_delta.append(time.perf_counter() - t1)
+        print('probability: {}, selected link: {}\n'.format(prob, selected_link+1))
+        pro.append(prob)
 
-    selected_links, dijkstra_cost = func.get_let_path(mu, A, b)
-    num_sel_links = len(selected_links)
-    links = np.array(selected_links)-1
+    return np.mean(pro), np.std(pro, ddof=1), np.mean(t_delta), np.max(t_delta)
 
-    for i in range(num_sel_links):
-        mu_sub, sigma_sub, sigma_k = func.update_param(mu_k,sigma_k,links[0])
-        cost = np.random.normal(mu_sub[2], np.sqrt(sigma_sub[22]))
-        real_cost.append(cost)
-        total_cost += cost
-        mu_k = func.update_mu(mu_sub,sigma_sub,cost)
-        for j in range(1,len(links)):
-            if links[j] > links[0]:
-                links[j] -= 1
-        links = np.delete(links,0)
-
-    return selected_links, real_cost, total_cost
-
-def dijkstra_iterations(A, b, mu, sigma, iterations):
-    results = []
-
-    for ite in range(iterations):
-        # print('current Dijkstra iteration: %d' % ite)
-        selected_links, real_cost, total_cost = dijkstra(A, b, mu, sigma)
-        # print('iteration finished, total cost is {}\ncorresponding cost are {}'.format(total_cost,real_cost))
-        # print('************************************************************************************************')
-        results.append(total_cost)
-
-    average_result = np.sum(results)/iterations
-    print('Average performance over {} iterations is {}'.format(iterations,average_result))
-    print('************************************************************************************************')
-
-    return average_result
-
-# start = time.process_time()
-
-# A, A_idx, b, r_0, r_s, n_link = func.generate_map(2)
-# mu = func.generate_mu(n_link)
-# sigma = func.generate_sigma(n_link,3)
-
-A, A_idx, mu = func.extract_map(0)
-_, sig, cov1 = func.generate_cov1(mu, 0.5, 50)
-corr, _, _ = func.generate_cov1(mu, 0.5, 10)
-cov2 = sig*corr
-cov3 = sig*np.eye(np.size(mu))
-n_node = np.shape(A)[0]
-# origin = np.random.randint(0,int(0.5*n_node))
-# destination = np.random.randint(int(0.5*n_node),n_node)
-# b, r_0, r_s = func.generate_b(n_node, origin, destination)
-
-N = 100
-iterations = 200
-
-n_test = 10
-test_results = [[],[],[]]
-OD_pairs = []
-
-for test in range(n_test):
-    origin = np.random.randint(0,int(0.5*n_node)) + 1
-    destination = np.random.randint(int(0.5*n_node),n_node) + 1
-    b, r_0, r_s = func.generate_b(n_node, origin, destination)
-    OD_pairs.append((r_0,r_s))                                  #+1 to get true index of node
-    print('test # {}, O:{}, D:{}'.format(test,r_0,r_s))
-
-    dijkstra_selected_links, dijkstra_cost = func.get_let_path(mu, A, b)
-    if dijkstra_cost is None:
-        print('OD is not connected')
-        continue
-    else:
-        test_results[0].append(dijkstra_cost)
-        print('Dijkstra selected links are {}'.format(dijkstra_selected_links))
-        print('Cost of Dijkstra optimal path is {}'.format(dijkstra_cost))
-    print('************************************************************************************************')
-
-    dijkstra_cost = dijkstra_iterations(A, b, mu, cov2, iterations)
-    test_results[1].append(dijkstra_cost)
-
-    # dplus_cost = dplus_iterations(A, A_idx, b, mu, cov, r_0, r_s, iterations)
-    # test_results[1].append(dplus_cost)
-
-    # GP4_cost = GP4_iterations(A, A_idx, b, mu, cov1, r_0, r_s, N, iterations)
-    # test_results[1].append(GP4_cost)
-
-    GP4_cost = GP4_iterations(A, A_idx, b, mu, cov2, r_0, r_s, N, iterations)
-    test_results[2].append(GP4_cost)
-
-# end = time.process_time()
-# print(end-start)
-
-print(test_results)
-print(OD_pairs)
-
-# plot.GP4_plot(test_results,OD_pairs)
