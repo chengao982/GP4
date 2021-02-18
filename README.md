@@ -4,7 +4,7 @@ This repo includes implementation of GP4 Algorithm describe in the paper *GP4: G
 ## Dataset
 The network data used for conducting simulations is available at [Networks.zip](https://drive.google.com/file/d/12L7PRDGWPF-S6sz-tFMFgfeBZWwQwVaV/view?usp=sharing). Please unzip the downloaded file into the same directory of the source code.
 The dataset includes 8 networks/time slots. Each of them consists of two files:
-- `.csv`, nodes and links of the network and mean of travel time of each link.
+- `.csv`, nodes and links of the network, and mean of travel time of each link.
 - `.npy`, covariance matrix used in experiments.
 
 ## Dependencies
