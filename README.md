@@ -17,7 +17,7 @@ The dataset includes 8 networks/time slots. Each of them consists of two files:
 ## Description
 The source code includes the following files:
 - `main.py`, Sample codes for testing GP4 and benchmarks on simple network descriped in the paper (Subsection V-A). Parameters are also specified here.
-- `GP4.py`, Implementation of GP4, Log-GP4, Bi-GP4 Algorithms.
-- `benchmark.py`, Our implementation of DOT, PLM, OS-MIP in GP-regulated stationary environment.
+- `GP4.py`, Implementation of GP4, Log-GP4 and Bi-GP4 Algorithms.
+- `benchmark.py`, Our implementation of DOT, PLM and OS-MIP in GP-regulated stationary environment.
 - `evaluation.py`, Functions that evaluate the performance of a path/DOT generated routing policy in terms of its posterior probability.
 - `func.py`, Tool functions used through out the code.
