@@ -13,7 +13,7 @@ The dataset includes 8 networks/time slots. Each of them consists of two files:
 - SciPy
 - Pandas
 - NetworkX
-- gurobipy (a license might be need to work)
+- gurobipy (a license might be needed)
 
 ## Description
 The source code includes the following files:
