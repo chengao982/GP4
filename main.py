@@ -3,8 +3,7 @@ import func
 import time
 import os
 from func import Map, record, write_file
-from benchmark import DOT, PLM, MIP_CPLEX, MIP_LR, other_iterations
-from evaluation import calc_post_prob_DOT, calc_post_prob
+from benchmark import DOT, PLM, ILP, MIP_LR, other_iterations
 from GP4 import GP4_iterations
 
 '''
@@ -12,7 +11,7 @@ Note: The indexes of nodes and links start from 1 when being set or displayed, b
 '''
 
 curr_model = "G" #model can be "G", "log", or "bi"
-curr_method = "svd" #decompose method can be "svd", "eigh" or "cholesky"
+is_posterior = False #if True, the performance of the algorithm is evaluated in terms of its posterior probability, which is the same as how GP4 is evaluated.
 S = 200
 N = 150
 MaxIter = 100
@@ -26,7 +25,6 @@ map_id = 0 #map_id can be integers from 0~7
 file_name = test_name+'.txt' #results are stored in this file
 fp = open(file_name, 'a+')
 fp.write("model={}\n".format(test_name))
-fp.write("decom_method={}\n".format(curr_method))
 fp.write("S={}\n".format(S))
 fp.write("N={}\n".format(N))
 fp.write("MaxIter={}\n".format(MaxIter))
@@ -50,7 +48,7 @@ for OD in OD_pairs:
     write_file("============", "=============", file_name)
     print("OD={}".format(OD))
 
-    mymap.update_OD(OD, model=curr_model)
+    mymap.update_OD(OD)
 
     for tf in T_factors:
         T = tf * mymap.dij_cost
@@ -60,22 +58,23 @@ for OD in OD_pairs:
         print("T={}".format(T))
 
         ##############################-----------DOT-----------###################################################
-        t1 = time.perf_counter()
-        DOT_pro, J, U = DOT(mymap, T, DOT_delta, model=curr_model)
-        t_delta = time.perf_counter() - t1
-        res_DOT = DOT_pro, calc_post_prob_DOT(J,U,mymap,1,1,DOT_delta), 0, t_delta
+        DOT_Solver = DOT(mymap, T, DOT_delta)
+        res_DOT = DOT_Solver.get_DOT_prob(T), 0, 0, DOT_Solver.DOT_t_delta
         record("DOT", res_DOT, file_name)
-        ##############################-----------OS-MIP_CPLEX-----------###########################################
-        res_MCP = other_iterations(MIP_CPLEX, mymap, T, N, S, MaxIter, model=curr_model, decom_method=curr_method)
-        record("MCP", res_MCP, file_name)
-        ##############################-----------OS-MIP_LR-----------##############################################
-        res_MLR = other_iterations(MIP_LR, mymap, T, N, S, MaxIter, model=curr_model, decom_method=curr_method)
+        ##############################----------Pruning---------##################################################
+        res_PAL = DOT_Solver.PA(T, N, S, is_posterior), 0, 0, DOT_Solver.PA_t_delta
+        record("Pruning", res_PAL, file_name)
+        ##############################-----------ILP-----------###################################################
+        res_ILP = other_iterations(ILP, mymap, T, N, S, MaxIter, is_posterior)
+        record("ILP", res_ILP, file_name)
+        ##############################-----------OS-MIP-----------################################################
+        res_MLR = other_iterations(MIP_LR, mymap, T, N, S, MaxIter, is_posterior)
         record("MLR", res_MLR, file_name)
         ##############################-----------PLM-----------####################################################
-        res_PLM = other_iterations(PLM, mymap, T, N, S, MaxIter, model=curr_model, decom_method=curr_method)
+        res_PLM = other_iterations(PLM, mymap, T, N, S, MaxIter, is_posterior)
         record("PLM", res_PLM, file_name)
         ##############################-----------GP4-----------####################################################
-        res_GP4 = GP4_iterations(mymap, T, N, S, MaxIter, model=curr_model, decom_method=curr_method)
+        res_GP4 = GP4_iterations(mymap, T, N, S, MaxIter)
         record("GP4", res_GP4, file_name)
 
         fp = open(file_name, 'a+')

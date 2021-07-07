@@ -1,18 +1,17 @@
 import numpy as np
 import pandas as pd
-import os
-import cvxopt
-from cvxopt import glpk
 from scipy import stats
 from scipy.stats import ortho_group
 from heapq import heapify, heappush, heappop
 import networkx as nx
+from itertools import islice
 
 class Map():
-    def __init__(self):
-        pass
+    def __init__(self, model=None, decom=None):
+        self.model = model
+        self.decom = decom
 
-    def make_map_with_M(self, mu, cov, M, mu2=None, cov2=None, phi_bi=None):
+    def make_map_with_M(self, mu, cov, M, mu2=None, cov2=None, phi_bi=None, is_multi=True):
         self.mu = mu
         self.cov = cov
         self.M = M
@@ -21,7 +20,7 @@ class Map():
         self.mu2 = mu2
         self.cov2 = cov2
         self.phi_bi = phi_bi
-        self.G = convert_map2graph(self)
+        self.G = convert_map2graph(self, is_multi)
 
     def make_map_with_G(self, mu, cov, G, OD_true, mu2=None, cov2=None, phi_bi=None):
         self.mu = mu
@@ -34,16 +33,9 @@ class Map():
         self.M = None
         self.b = None
 
-    def update_OD(self, OD_ori, model='G'):
+    def update_OD(self, OD_ori):
         self.b, self.r_0, self.r_s = generate_b(self.n_node, OD_ori[0], OD_ori[1])
-        if model == 'G':
-            self.dij_cost, self.dij_path, self.dij_onehot_path = dijkstra(self.G, self.r_0, self.r_s)
-        elif model == 'log':
-            exp_mu = calc_exp_gauss(self.mu, self.cov)
-            self.dij_cost, self.dij_path, self.dij_onehot_path = dijkstra(self.G, self.r_0, self.r_s, ext_weight=exp_mu)
-        elif model == 'bi':
-            mu_bi = calc_bi_gauss(self.phi_bi, self.mu, self.mu2)
-            self.dij_cost, self.dij_path, self.dij_onehot_path = dijkstra(self.G, self.r_0, self.r_s, ext_weight=mu_bi)
+        self.dij_cost, self.dij_path, self.dij_onehot_path = dijkstra(self.G, self.r_0, self.r_s)
 
     def generate_simple_map(self, model):
         if model == 'G':
@@ -51,7 +43,9 @@ class Map():
             mu = np.array([10, 10.1, 10.2, 20]).reshape(-1, 1)
             cov = np.array([[2, -1, 1, 0], [-1, 2, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1]])
             self.make_map_with_M(mu, cov, M)
-            self.update_OD([1,3], model='G')
+            self.model = "G"
+            self.decom = "cholesky"
+            self.update_OD([1,3])
 
         elif model == 'log':
             M = generate_simple_M(1)
@@ -59,7 +53,11 @@ class Map():
             cov = np.array([[2, -1, 1, 0], [-1, 2, 0, 0], [1, 0, 1, 0], [0, 0, 0, 1]])
             mu_log, cov_log = calc_logGP4_param(mu, cov)
             self.make_map_with_M(mu_log, cov_log, M)
-            self.update_OD([1,3], model='log')
+            self.model = "log"
+            self.decom = "eigh"
+            exp_mu = calc_exp_gauss(self.mu, self.cov)
+            self.G = update_graph_weight(self.G, exp_mu)
+            self.update_OD([1,3])
 
         elif model == 'bi':
             M = generate_simple_M(1)
@@ -69,8 +67,11 @@ class Map():
             cov2 = np.array([[1, 0.8, -0.7, 0], [0.8, 2, -0.5, 0], [-0.7, -0.5, 3, 0], [0, 0, 0, 2]])
             phi_bi = 0.5
             self.make_map_with_M(mu=mu1, cov=cov1, M=M, mu2=mu2, cov2=cov2, phi_bi=phi_bi)
-            self.update_OD([1,3], model='bi')
-            
+            self.model = "bi"
+            self.decom = "cholesky"
+            mu_bi = calc_bi_gauss(self.phi_bi, self.mu, self.mu2)
+            self.G = update_graph_weight(self.G, mu_bi)
+            self.update_OD([1,3]) 
 
     def generate_real_map(self, map_id, map_dir):
         ''' map_id is an integer that identifies the map you wish to use.
@@ -86,7 +87,9 @@ class Map():
                 7    Chengdu-Weekday Peak Hour
         '''
         M, mu, cov = extract_map(map_id, map_dir)
-        self.make_map_with_M(mu, cov, M)
+        self.make_map_with_M(mu, cov, M, is_multi=False)
+        self.model = "G"
+        self.decom = "eigh" if map_id == 0 else "cholesky"
 
 class priority_dict(dict):
     def __init__(self, *args, **kwargs):
@@ -134,41 +137,6 @@ class priority_dict(dict):
     def sorted_iter(self):
         while self:
             yield self.pop_smallest()
-
-def cvxopt_glpk_minmax(c, M, b, x_min=0, x_max=1):
-    dim = np.size(c,0)
-
-    x_min = x_min * np.ones(dim)
-    x_max = x_max * np.ones(dim)
-    G = np.vstack([+np.eye(dim),-np.eye(dim)])
-    h = np.hstack([x_max, -x_min])
-    # G = -np.eye(dim)
-    # h = x_min.T
-
-    c = cvxopt.matrix(c,tc='d')
-    M = cvxopt.matrix(M,tc='d')
-    b = cvxopt.matrix(b,tc='d')
-    G = cvxopt.matrix(G,tc='d')
-    h = cvxopt.matrix(h,tc='d')
-    # sol = cvxopt.solvers.lp(c, G, h, M, b, solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-    _,x = glpk.ilp(c,G,h,M,b,options={'msg_lev':'GLP_MSG_OFF'})
-
-    return np.array(x)
-
-def cvxopt_glpk_binary(c, G, h, M, b):
-    dim = np.size(c,0)
-
-    B = {i for i in range(dim)}
-
-    c = cvxopt.matrix(c,tc='d')
-    M = cvxopt.matrix(M,tc='d')
-    b = cvxopt.matrix(b,tc='d')
-    G = cvxopt.matrix(G,tc='d')
-    h = cvxopt.matrix(h,tc='d')
-    # sol = cvxopt.solvers.lp(c, G, h, M, b, solver='glpk',options={'glpk':{'msg_lev':'GLP_MSG_OFF'}})
-    _,x = glpk.ilp(c,G,h,M,b,B=B,options={'msg_lev':'GLP_MSG_OFF'})
-
-    return np.array(x)
 
 def generate_simple_M(n):                       # n: num of "loop" structure
     M = np.zeros((n+2,2*n+2))
@@ -231,24 +199,13 @@ def calc_exp_gauss(mu_log, cov_log):
 def calc_bi_gauss(phi, mu1, mu2):
     return phi*mu1+(1-phi)*mu2
 
-def generate_cov(mu, nu):
-    n_link = np.size(mu)
-
-    sigma = nu*mu#*np.random.rand(n_link,1)
-
-    n_sample = n_link
-    samples = np.zeros((n_link,n_sample))
-
-    for i in range(np.shape(samples)[0]):
-        for j in range(np.shape(samples)[1]):
-            # while samples[i][j] <= 0:
-            samples[i][j] = np.random.normal(mu[i],sigma[i])
-
-    cov = np.cov(samples)
-
-    return cov
-
 def generate_cov1(mu, nu, factors):         #factors up, corr down
+    '''
+    Generate a semi-positive definite covariance matrix.
+    'nu' controls the magnitude of variance and covariance.
+    The correlation coefficients can be adjusted by changing 'factors'.
+    When the 'factors' goes up, the magnitude of the corrlation coefficients generallty goes down
+    '''
     n_link = np.size(mu)
 
     W = np.random.randn(n_link,factors)
@@ -256,14 +213,16 @@ def generate_cov1(mu, nu, factors):         #factors up, corr down
     corr = np.matmul(np.matmul(np.diag(1/np.sqrt(np.diag(S))),S),np.diag(1/np.sqrt(np.diag(S))))
 
     sigma = nu*mu#*np.random.rand(n_link,1).reshape(-1,1)
-
     sigma = np.matmul(sigma,sigma.T)
-
     cov = sigma*corr
 
     return corr, sigma, cov
 
 def generate_cov2(mu, nu):
+    '''
+    Generate a positive definite covariance matrix.
+    'nu' controls the magnitude of variance and covariance.
+    '''
     n_link = np.size(mu)
 
     D = np.diag(np.random.rand(n_link))
@@ -285,7 +244,7 @@ def calc_logGP4_param(mu_ori, cov_ori):
 
 def generate_biGP_samples(phi_bi, mu1, mu2, cov1, cov2, S, method='cholesky'):
     rng = np.random.default_rng()
-    if type(mu1) is np.ndarray:
+    if np.size(mu1) > 1:
         samples1 = rng.multivariate_normal(mu1.reshape(-1), cov1, S, method=method)
         samples2 = rng.multivariate_normal(mu2.reshape(-1), cov2, S, method=method)
         dim = mu1.size
@@ -300,20 +259,45 @@ def generate_biGP_samples(phi_bi, mu1, mu2, cov1, cov2, S, method='cholesky'):
 
     return samples
 
-def generate_samples(mymap, S, model='G', decom_method='cholesky'):
+def generate_samples(mymap, S):
     '''
     return: N*S matrix
     '''
-
     rng = np.random.default_rng()
-    if model == "G":
-        samples = rng.multivariate_normal(mymap.mu.reshape(-1), mymap.cov, S, method=decom_method)
-    elif model == "log":
-        samples = rng.multivariate_normal(mymap.mu.reshape(-1), mymap.cov, S, method=decom_method)
+    if mymap.model == "G":
+        samples = rng.multivariate_normal(mymap.mu.reshape(-1), mymap.cov, S, method=mymap.decom)
+    elif mymap.model == "log":
+        samples = rng.multivariate_normal(mymap.mu.reshape(-1), mymap.cov, S, method=mymap.decom)
         samples = np.exp(samples)
-    elif model == "bi":
-        samples = generate_biGP_samples(mymap.phi_bi, mymap.mu, mymap.mu2, mymap.cov, mymap.cov2, S, method=decom_method)
+    elif mymap.model == "bi":
+        samples = generate_biGP_samples(mymap.phi_bi, mymap.mu, mymap.mu2, mymap.cov, mymap.cov2, S, method=mymap.decom)
     return samples.T
+    
+def sort_path_order(path, mymap):
+    if type(path) is np.ndarray:
+        path = path.tolist()
+    num_links = len(path)
+    sorted_path = []
+    node = np.where(mymap.b==1)[0].item()
+    while num_links != len(sorted_path):
+        for link in path:
+            if mymap.M[node,link] == 1:
+                sorted_path.append(link)
+                node = np.where(mymap.M[:,link]==-1)[0].item()
+                path.remove(link)
+                break
+    return np.array(sorted_path)
+
+def first_path_link(path, mymap):
+    if type(path) is np.ndarray:
+        path = path.tolist()
+    node = np.where(mymap.b==1)[0].item()
+    for link in path:
+        if mymap.M[node,link] == 1:
+            sorted_path=[link]
+            path.remove(link)
+            break
+    return np.array(sorted_path+path)
 
 def convert_node2onehot(path, G):
     link_ids = []
@@ -329,8 +313,8 @@ def convert_node2onehot(path, G):
 
     return link_ids, onehot
 
-def convert_map2graph(mymap):
-    G = nx.MultiDiGraph()
+def convert_map2graph(mymap, is_multi=True):
+    G = nx.MultiDiGraph() if is_multi else nx.DiGraph()
 
     for i in range(mymap.M.shape[1]):
         start = np.where(mymap.M[:,i]==1)[0].item()
@@ -340,18 +324,33 @@ def convert_map2graph(mymap):
     return G
 
 def update_graph_weight(G, new_mu):
+    is_multi = True if G.__module__ == 'networkx.classes.multidigraph' else False
+
     G_new = G.copy()
-    for u,v,k,d in G.edges(data=True, keys=True):
-        G_new[u][v][k]['weight'] = new_mu[d['index']].item()
+    if is_multi:
+        for u,v,k,d in G.edges(data=True, keys=True):
+            G_new[u][v][k]['weight'] = new_mu[d['index']].item()
+    else:
+        for u,v,d in G.edges(data=True):
+            G_new[u][v]['weight'] = new_mu[d['index']].item()
     return G_new
 
 def remove_graph_edge(G, e_id):
+    is_multi = True if G.__module__ == 'networkx.classes.multidigraph' else False
+
     G_new = G.copy()
-    for u,v,k,d in G.edges(data=True, keys=True):
-        if d['index'] == e_id:
-            G_new.remove_edge(u,v,k)
-        elif d['index'] > e_id:
-            G_new[u][v][k]['index'] -= 1
+    if is_multi:
+        for u,v,k,d in G.edges(data=True, keys=True):
+            if d['index'] == e_id:
+                G_new.remove_edge(u,v,k)
+            elif d['index'] > e_id:
+                G_new[u][v][k]['index'] -= 1
+    else:
+        for u,v,d in G.edges(data=True):
+            if d['index'] == e_id:
+                G_new.remove_edge(u,v)
+            elif d['index'] > e_id:
+                G_new[u][v]['index'] -= 1
     return G_new
 
 def find_next_node(mymap, curr_node, link_idx):
@@ -400,6 +399,9 @@ def dijkstra(G, start, end, ext_weight=None):
         return path_cost, path, onehot
     else:
         return -1, None, None
+
+def k_shortest_paths(mymap, k, weight="weight"):
+    return list(islice(nx.shortest_simple_paths(mymap.G, mymap.r_0, mymap.r_s, weight=weight), k))
 
 def t_test(x, y, alternative='greater', alpha=0.05):
     t_stat, double_p = stats.ttest_ind(x,y,equal_var = False)
@@ -454,6 +456,9 @@ def extract_map(map_id, map_dir):
 
     origins = raw_map_data['From']
     destinations = raw_map_data['To']
+    if origins.min() == 0 or destinations.min() == 0:
+        origins += 1
+        destinations += 1
     n_node = max(origins.max(), destinations.max())
     n_link = raw_map_data.shape[0]
 
@@ -465,6 +470,9 @@ def extract_map(map_id, map_dir):
     mu = np.array(raw_map_data['Cost']).reshape(-1,1)
     
     cov = np.load(map_dir + map_list[map_id] + '_cov.npy')
+
+    # if map_id == 0:
+    #     cov = generate_cov2(mu, 0.5)[2]
 
     return M, mu, cov
 

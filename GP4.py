@@ -5,10 +5,10 @@ from func import Map
 from benchmark import PLM
 from scipy.stats import norm
 
-def GP4(mymap, T, N, S, decom_method='cholesky'):
+def GP4(mymap, T, N, S):
     print('current node: {}'.format(mymap.r_0 + 1))
     value_max = 0
-    map_temp = Map()
+    map_temp = Map(mymap.model, mymap.decom)
 
     for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
         if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
@@ -34,7 +34,7 @@ def GP4(mymap, T, N, S, decom_method='cholesky'):
                 if T_temp > 0:
                     mu_con = func.update_mu(mu_sub, cov_sub, sample)
                     map_temp.make_map_with_G(mu=mu_con, cov=cov_con, OD_true=[next_node, mymap.r_s], G=G_temp)
-                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, decom_method=decom_method)[0]
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S)[0]
 
             value = v_hat / N
 
@@ -44,10 +44,10 @@ def GP4(mymap, T, N, S, decom_method='cholesky'):
 
     return selected_link, value_max
 
-def logGP4(mymap, T, N, S, decom_method='cholesky'):
+def logGP4(mymap, T, N, S):
     print('current node: {}'.format(mymap.r_0 + 1))
     value_max = 0
-    map_temp = Map()
+    map_temp = Map(mymap.model, mymap.decom)
 
     for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
         if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
@@ -72,8 +72,8 @@ def logGP4(mymap, T, N, S, decom_method='cholesky'):
                 T_temp = T - np.exp(sample)
                 if T_temp > 0:
                     mu_con = func.update_mu(mu_sub, cov_sub, sample)
-                    map_temp.make_map_with_G(mu=mu_con, cov=cov_con, OD_true=[next_node, mymap.r_s], G=G_temp)
-                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, model="log", decom_method=decom_method)[0]
+                    map_temp.make_map_with_G(mu=mu_con, cov=cov_con, OD_true=[next_node, mymap.r_s], G=G_temp, )
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S)[0]
 
             value = v_hat / N
 
@@ -83,10 +83,10 @@ def logGP4(mymap, T, N, S, decom_method='cholesky'):
 
     return selected_link, value_max
 
-def biGP4(mymap, T, N, S, decom_method='cholesky'):
+def biGP4(mymap, T, N, S):
     print('current node: {}'.format(mymap.r_0 + 1))
     value_max = 0
-    map_temp = Map()
+    map_temp = Map(mymap.model, mymap.decom)
 
     for _, next_node, d in mymap.G.out_edges(mymap.r_0, data=True):
         if func.dijkstra(mymap.G, next_node, mymap.r_s)[0] == -1:
@@ -116,7 +116,7 @@ def biGP4(mymap, T, N, S, decom_method='cholesky'):
                     mu1_con = func.update_mu(mu1_sub, cov1_sub, sample)
                     mu2_con = func.update_mu(mu2_sub, cov2_sub, sample)
                     map_temp.make_map_with_G(mu=mu1_con, cov=cov1_con, OD_true=[next_node, mymap.r_s], G=G_temp, mu2=mu2_con, cov2=cov2_con, phi_bi=mymap.phi_bi)
-                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, model="bi", decom_method=decom_method)[0]
+                    v_hat += PLM(mymap=map_temp, T=T_temp, S=S, model="bi")[0]
 
             value = v_hat / N
 
@@ -126,7 +126,7 @@ def biGP4(mymap, T, N, S, decom_method='cholesky'):
 
     return selected_link, value_max
 
-def GP4_iterations(mymap, T, N, S, MaxIter, model='G', decom_method='cholesky'):
+def GP4_iterations(mymap, T, N, S, MaxIter):
     '''
     run a variant of GP4 for MaxIter times and return the statistics
     '''
@@ -138,12 +138,12 @@ def GP4_iterations(mymap, T, N, S, MaxIter, model='G', decom_method='cholesky'):
         print('GP4 iteration #{}'.format(ite))
         t1 = time.perf_counter()
 
-        if model == 'G':
-            selected_link, prob = GP4(mymap, T, N, S, decom_method)
-        elif model == 'log':
-            selected_link, prob = logGP4(mymap, T, N, S, decom_method)
-        elif model == 'bi':
-            selected_link, prob = biGP4(mymap, T, N, S, decom_method)
+        if mymap.model == 'G':
+            selected_link, prob = GP4(mymap, T, N, S)
+        elif mymap.model == 'log':
+            selected_link, prob = logGP4(mymap, T, N, S)
+        elif mymap.model == 'bi':
+            selected_link, prob = biGP4(mymap, T, N, S)
 
         t_delta.append(time.perf_counter() - t1)
         print('probability: {}, selected link: {}\n'.format(prob, selected_link+1))
