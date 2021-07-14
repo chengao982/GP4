@@ -11,7 +11,7 @@ def calc_path_prob(path, mymap, T, samples=None, S=1000):
     if mymap.model == 'G':
         # path = np.flatnonzero(x)
         mu_sum = np.sum(mymap.mu[path])
-        cov_sum = np.sum(mymap.cov[path, path])
+        cov_sum = np.sum(mymap.cov[path][:, path])
         return norm.cdf(T, mu_sum, np.sqrt(cov_sum))
     else:
         if samples is None:
@@ -48,7 +48,7 @@ def calc_post_prob(path, mymap, T, N, S):
             if T_temp > 0:
                 mu_con = func.update_mu(mu_sub, cov_sub, sample)
                 mu_sum = np.sum(mu_con[path_con])
-                cov_sum = np.sum(cov_con[path_con, path_con])
+                cov_sum = np.sum(cov_con[path_con][:, path_con])
                 v_hat += norm.cdf(T_temp, mu_sum, np.sqrt(cov_sum))
 
     elif mymap.model == 'log':
