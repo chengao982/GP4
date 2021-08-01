@@ -91,7 +91,7 @@ def ILP(mymap, S, T):
 
     prob = 1 - np.dot(obj.T, res).item()/S
     path = np.flatnonzero(res[:mymap.n_link])
-    path = func.first_path_link(path, mymap)
+    path = func.sort_path_order(path, mymap)
     # print(prob)
 
     # print("final path:" + str(path + 1))
