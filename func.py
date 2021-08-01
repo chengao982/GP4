@@ -276,10 +276,9 @@ def generate_samples(mymap, S):
 def sort_path_order(path, mymap):
     if type(path) is np.ndarray:
         path = path.tolist()
-    num_links = len(path)
     sorted_path = []
-    node = np.where(mymap.b==1)[0].item()
-    while num_links != len(sorted_path):
+    node = mymap.r_0
+    while node != mymap.r_s:
         for link in path:
             if mymap.M[node,link] == 1:
                 sorted_path.append(link)
@@ -291,7 +290,7 @@ def sort_path_order(path, mymap):
 def first_path_link(path, mymap):
     if type(path) is np.ndarray:
         path = path.tolist()
-    node = np.where(mymap.b==1)[0].item()
+    node = mymap.r_0
     for link in path:
         if mymap.M[node,link] == 1:
             sorted_path=[link]
